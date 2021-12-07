@@ -3,7 +3,7 @@
 		// input(type="text", v-model="keyboardText", v-if="!input")
 		.keyboard
 			.line(v-for="(line, index) in keySet", :key="index")
-				span(v-for="(key, index) in line", :key="index", :class="getClassesOfKey(key)", v-text="getCaptionOfKey(key)", @click="e => clickKey(e, key)", @mousedown="mousedown", :style="getKeyStyle(key)")
+				span(v-for="(key, index) in line", :key="index", :class="getClassesOfKey(key)", v-text="getCaptionOfKey(key)", @mousedown="e => touchStart(e, key)", @mouseover="e => previewInputChange(e, key)", @mouseup="e => touchRelease(e, key)", :style="getKeyStyle(key)")
 
 
 </template>
@@ -39,7 +39,9 @@
 			return {
 				currentKeySet: this.defaultKeySet,
 
-				inputScrollLeft: 0
+				inputScrollLeft: 0,
+				mouseButtonDown: false,
+				charPreviewed: false
 			};
 		},
 
@@ -129,6 +131,10 @@
 					if (key.keySet && this.currentKeySet == key.keySet)
 						classes += " activated";
 
+					if (true === this.mouseButtonDown) {
+						classes += " pressed";
+					}
+
 					return classes;
 				}
 			},
@@ -187,19 +193,102 @@
 				return text;
 			},
 
-			mousedown(e) {
+			setInputElementScrollLeft() {
+				this.input.scrollLeft = this.inputScrollLeft;
+				this.input.removeEventListener("focusout", this.setInputElementScrollLeft);
+			},
+
+			touchStart(e, key) {
+				this.mouseButtonDown = true;
 				if (!this.input) return;
 				if (this.options.preventClickEvent) e.preventDefault();
 
 				this.inputScrollLeft = this.input.scrollLeft;
+
+				// JK: when we touch a key, we will lose focus from the input element, which causes the text to move to the left
+				// If, when we're out of focus, we set the scrollLeft of the input element to the last scrollLeft recorded when it was still in focus,
+				// the text stays scrolled to the right.
+				this.input.addEventListener("focusout", this.setInputElementScrollLeft);
+
+				this.previewInputChange(e, key);
 			},
 
-			clickKey(e, key) {
+			previewInputChange(e, key) {
+				if (false === this.mouseButtonDown) {
+					return;
+				}
+
 				if (!this.input) return;
 				if (this.options.preventClickEvent) e.preventDefault();
 
 				let caret = this.getCaret();
 				let text = this.input.value;
+
+				if (true === this.charPreviewed) {
+					text = text.substring(0, text.length - 1);
+				}
+				
+				let addChar = null;
+				if (typeof key == "object") {
+					if (key.keySet || key.func) {
+						// Ignore special keys when dragging finger over keyboard,
+						// only trigger them when finger is released on top of them.
+						// This will delete the previewed character from the input field, though
+						this.charPreviewed = false;
+					}
+					else {
+						addChar = key.key;
+					}
+				} else {
+					addChar = key;
+				}
+
+				if (addChar) {
+					if (this.input.maxLength <= 0 || text.length < this.input.maxLength) {
+						this.charPreviewed = true;
+
+						if (this.options.useKbEvents) {
+							let e = document.createEvent("Event"); 
+							e.initEvent("keydown", true, true);
+							e.which = e.keyCode = addChar.charCodeAt();
+							if (this.input.dispatchEvent(e)) {
+								text = this.insertChar(caret, text, addChar);
+							}
+						} else {
+							text = this.insertChar(caret, text, addChar);
+						}
+					}
+				}
+
+				this.input.value = text;
+				this.setFocusToInput(caret);
+
+				if (this.change)
+					this.change(text, addChar);
+
+				if (this.input.maxLength > 0 && text.length >= this.input.maxLength) {
+					// The value reached the maxLength
+					if (this.next)
+						this.next();
+				}
+
+				// trigger 'input' Event
+				this.input.dispatchEvent(new Event("input", { bubbles: true }));
+			},
+
+			touchRelease(e, key) {
+				if (false === this.mouseButtonDown) {
+					return;
+				} else {
+					this.mouseButtonDown = false;
+				}
+
+				if (!this.input) return;
+				if (this.options.preventClickEvent) e.preventDefault();
+
+				let caret = this.getCaret();
+				let text = this.input.value;
+				text = text.substring(0, text.length - 1);
 				
 				let addChar = null;
 				if (typeof key == "object") {
@@ -278,6 +367,7 @@
 				// trigger 'input' Event
 				this.input.dispatchEvent(new Event("input", { bubbles: true }));
 
+				this.charPreviewed = false;
 			},
 			
 			setFocusToInput(caret) {
