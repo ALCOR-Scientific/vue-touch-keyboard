@@ -13,6 +13,8 @@
 	import isString from "lodash/isString";
 	import isObject from "lodash/isObject";
 
+	const TOUCH_DEBOUNCE_TIME_MS = 100;
+
 	export default {
 		props: {
 			input: [HTMLInputElement, HTMLTextAreaElement],
@@ -41,7 +43,8 @@
 
 				inputScrollLeft: 0,
 				mouseButtonDown: false,
-				charPreviewed: false
+				charPreviewed: false,
+				touchReleaseTimeout: null
 			};
 		},
 
@@ -367,7 +370,13 @@
 				// trigger 'input' Event
 				this.input.dispatchEvent(new Event("input", { bubbles: true }));
 
-				this.charPreviewed = false;
+				// When dragging a finger across the keyboard, the touch screen may intermittently not register the user's finger touching it.
+				// This adds debouncing so that it doesn't add extra characters to the input field
+				this.touchReleaseTimeout = setTimeout(() => {
+					if (false === this.mouseButtonDown) {
+						this.charPreviewed = false;
+					}
+				}, TOUCH_DEBOUNCE_TIME_MS);
 			},
 			
 			setFocusToInput(caret) {
