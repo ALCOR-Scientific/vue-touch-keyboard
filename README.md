@@ -2,6 +2,8 @@
 
 Virtual keyboard component for Vue.js v2.x. Designed to Raspberry Pi Touch Display
 
+**12/29/2021:** Original repo by icebob was forked into the ALCOR-Scientific github organization and the 0115.03.004-MIZAR_ui_app repo now pulls from this repo to install vue-touch-keyboard when running npm install.
+
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/5f3594b30dd4489094730fa2babd7ba5)](https://www.codacy.com/app/mereg-norbert/vue-touch-keyboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=icebob/vue-touch-keyboard&amp;utm_campaign=Badge_Grade)
 [![Build Status](https://travis-ci.org/icebob/vue-touch-keyboard.svg?branch=master)](https://travis-ci.org/icebob/vue-touch-keyboard)
 [![Coverage Status](https://coveralls.io/repos/github/icebob/vue-touch-keyboard/badge.svg?branch=master)](https://coveralls.io/github/icebob/vue-touch-keyboard?branch=master)
