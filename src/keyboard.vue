@@ -43,7 +43,8 @@
 
 				inputScrollLeft: 0,
 				mouseButtonDown: false,
-				charPreviewed: false,
+				keyPreviewShown: false,
+				keyPreviewTextLength: 0,
 				touchReleaseTimeout: null
 			};
 		},
@@ -227,8 +228,8 @@
 				let caret = this.getCaret();
 				let text = this.input.value;
 
-				if (true === this.charPreviewed) {
-					text = text.substring(0, text.length - 1);
+				if (true === this.keyPreviewShown) {
+					text = text.substring(0, text.length - this.keyPreviewTextLength);
 				}
 				
 				let addChar = null;
@@ -237,7 +238,8 @@
 						// Ignore special keys when dragging finger over keyboard,
 						// only trigger them when finger is released on top of them.
 						// This will delete the previewed character from the input field, though
-						this.charPreviewed = false;
+						this.keyPreviewShown = false;
+						this.keyPreviewTextLength = 0;
 					}
 					else {
 						addChar = key.key;
@@ -248,7 +250,8 @@
 
 				if (addChar) {
 					if (this.input.maxLength <= 0 || text.length < this.input.maxLength) {
-						this.charPreviewed = true;
+						this.keyPreviewShown = true;
+						this.keyPreviewTextLength = addChar.length;
 
 						if (this.options.useKbEvents) {
 							let e = document.createEvent("Event"); 
@@ -291,7 +294,7 @@
 
 				let caret = this.getCaret();
 				let text = this.input.value;
-				text = text.substring(0, text.length - 1);
+				text = text.substring(0, text.length - this.keyPreviewTextLength);
 				
 				let addChar = null;
 				if (typeof key == "object") {
@@ -374,7 +377,8 @@
 				// This adds debouncing so that it doesn't add extra characters to the input field
 				this.touchReleaseTimeout = setTimeout(() => {
 					if (false === this.mouseButtonDown) {
-						this.charPreviewed = false;
+						this.keyPreviewShown = false;
+						this.keyPreviewTextLength = 0;
 					}
 				}, TOUCH_DEBOUNCE_TIME_MS);
 			},

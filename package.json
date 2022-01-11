@@ -57,7 +57,7 @@
     "eslint-plugin-vue": "2.0.1",
     "extract-text-webpack-plugin": "1.0.1",
     "file-loader": "0.10.1",
-    "git-commit-message-convention": "git://github.com/kazupon/git-commit-message-convention.git#065dfffbe2de5f6f16150aac9d4db7fdf5515e56",
+    "git-commit-message-convention": "git+ssh://github.com/kazupon/git-commit-message-convention.git#065dfffbe2de5f6f16150aac9d4db7fdf5515e56",
     "inject-loader": "2.0.1",
     "isparta-loader": "2.0.0",
     "jade": "1.11.0",
