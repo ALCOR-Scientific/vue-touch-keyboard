@@ -3,7 +3,7 @@
 		// input(type="text", v-model="keyboardText", v-if="!input")
 		.keyboard
 			.line(v-for="(line, index) in keySet", :key="index")
-				span(v-for="(key, index) in line", :key="index", :class="getClassesOfKey(key)", v-text="getCaptionOfKey(key)", @mousedown="e => touchStart(e, key)", @mouseover="e => previewInputChange(e, key)", @mouseup="e => touchRelease(e, key)", :style="getKeyStyle(key)")
+				span(v-for="(key, index) in line", :key="index", :class="getClassesOfKey(key)", v-text="getCaptionOfKey(key)", @mousedown="e => touchStart(e, key)", @mouseover="e => previewInputChange(e, key, false)", @mouseup="e => touchRelease(e, key)", :style="getKeyStyle(key)")
 
 
 </template>
@@ -45,7 +45,10 @@
 				mouseButtonDown: false,
 				keyPreviewShown: false,
 				keyPreviewTextLength: 0,
-				touchReleaseTimeout: null
+				touchReleaseTimeout: null,
+				characterDeletedByBackspace: null,
+				caretBackup: null,
+				textInInputFieldInitiallyMaxLength: false
 			};
 		},
 
@@ -214,10 +217,10 @@
 				// the text stays scrolled to the right.
 				this.input.addEventListener("focusout", this.setInputElementScrollLeft);
 
-				this.previewInputChange(e, key);
+				this.previewInputChange(e, key, true);
 			},
 
-			previewInputChange(e, key) {
+			previewInputChange(e, key, isTouchStart) {
 				if (false === this.mouseButtonDown) {
 					return;
 				}
@@ -225,21 +228,55 @@
 				if (!this.input) return;
 				if (this.options.preventClickEvent) e.preventDefault();
 
-				let caret = this.getCaret();
+				// JK: "If you (or Vue) copy a new value into an input, the cursor will be set to the end of the input. 
+				// If you want to retain the previous position, you will need to capture the position, make the change, 
+				// then on the $nextTick restore the position." 
+				// https://stackoverflow.com/questions/55478646/input-cursor-jumps-to-end-of-input-field-on-input-event
+				let caret;
+				if (null === this.caretBackup) {
+					caret = this.getCaret();
+				} else {
+					caret = this.caretBackup;
+					this.input.setSelectionRange(caret.start, caret.end);
+				}
+				
 				let text = this.input.value;
 
+				// JK: we only want to remove one character when we press backspace and the input field is at max length
+				if (true === isTouchStart) {
+					if (text.length === this.input.maxLength) {
+						this.textInInputFieldInitiallyMaxLength = true;
+					} else {
+						this.textInInputFieldInitiallyMaxLength = false;
+					}
+				}
+
 				if (true === this.keyPreviewShown) {
-					text = text.substring(0, text.length - this.keyPreviewTextLength);
+					// JK: looping with this.backspace preserves the caret position
+					for (let i = 0; i < this.keyPreviewTextLength; i++) {
+						text = this.backspace(caret, text);
+					}
+					
+					this.keyPreviewShown = false;
+					this.keyPreviewTextLength = 0;
+				} else if (null !== this.characterDeletedByBackspace) {
+					// JK: put the deleted character back where it should be
+					text = this.insertChar(caret, text, this.characterDeletedByBackspace);
+					
+					this.characterDeletedByBackspace = null;
 				}
 				
 				let addChar = null;
+
+				// JK: Ignore special keys (except for backspace) when dragging finger over keyboard,
+				// only trigger them when finger is released on top of them.
+				// The previewed character in the input field will still be removed.
 				if (typeof key == "object") {
 					if (key.keySet || key.func) {
-						// Ignore special keys when dragging finger over keyboard,
-						// only trigger them when finger is released on top of them.
-						// This will delete the previewed character from the input field, though
-						this.keyPreviewShown = false;
-						this.keyPreviewTextLength = 0;
+						if ("backspace" === key.func && text.length > 0 && (false === this.textInInputFieldInitiallyMaxLength || true === isTouchStart)) {
+							this.characterDeletedByBackspace = text.substring(caret.start - 1, caret.start);
+							text = this.backspace(caret, text);
+						}
 					}
 					else {
 						addChar = key.key;
@@ -249,9 +286,14 @@
 				}
 
 				if (addChar) {
-					if (this.input.maxLength <= 0 || text.length < this.input.maxLength) {
-						this.keyPreviewShown = true;
-						this.keyPreviewTextLength = addChar.length;
+					if (this.input.maxLength <= 0 || text.length <= this.input.maxLength) {
+						// JK: delete characters in the input text until we can fit the pressed key
+						if (text.length === this.input.maxLength) {
+							// JK: looping with this.backspace preserves the caret position
+							for (let i = 0; i < addChar.length; i++) {
+								text = this.backspace(caret, text);
+							}
+						}
 
 						if (this.options.useKbEvents) {
 							let e = document.createEvent("Event"); 
@@ -263,23 +305,30 @@
 						} else {
 							text = this.insertChar(caret, text, addChar);
 						}
+
+						this.keyPreviewShown = true;
+						this.keyPreviewTextLength = addChar.length;
 					}
 				}
 
 				this.input.value = text;
 				this.setFocusToInput(caret);
 
-				if (this.change)
-					this.change(text, addChar);
-
-				if (this.input.maxLength > 0 && text.length >= this.input.maxLength) {
-					// The value reached the maxLength
-					if (this.next)
-						this.next();
+				if (this.change) {
+					this.change(text, addChar, key, false);
 				}
+
+				// JK: don't do this until the key is released
+				// if (this.input.maxLength > 0 && text.length >= this.input.maxLength) {
+				// 	// The value reached the maxLength
+				// 	if (this.next)
+				// 		this.next();
+				// }
 
 				// trigger 'input' Event
 				this.input.dispatchEvent(new Event("input", { bubbles: true }));
+
+				this.caretBackup = caret;
 			},
 
 			touchRelease(e, key) {
@@ -292,9 +341,19 @@
 				if (!this.input) return;
 				if (this.options.preventClickEvent) e.preventDefault();
 
-				let caret = this.getCaret();
+				// JK "If you (or Vue) copy a new value into an input, the cursor will be set to the end of the input. 
+				// If you want to retain the previous position, you will need to capture the position, make the change, 
+				// then on the $nextTick restore the position." 
+				// https://stackoverflow.com/questions/55478646/input-cursor-jumps-to-end-of-input-field-on-input-event
+				let caret;
+				if (null === this.caretBackup) {
+					caret = this.getCaret();
+				} else {
+					caret = this.caretBackup;
+					this.input.setSelectionRange(caret.start, caret.end);
+				}
+
 				let text = this.input.value;
-				text = text.substring(0, text.length - this.keyPreviewTextLength);
 				
 				let addChar = null;
 				if (typeof key == "object") {
@@ -303,9 +362,10 @@
 					}
 					else if (key.func) {
 						switch(key.func) {
-
+						
+						// JK: we call this.backspace() in previewInputChange()
 						case "backspace": {
-							text = this.backspace(caret, text);
+							this.characterDeletedByBackspace = null;
 							break;
 						}
 
@@ -341,18 +401,19 @@
 				}
 
 				if (addChar) {
-					if (this.input.maxLength <= 0 || text.length < this.input.maxLength) {
-						if (this.options.useKbEvents) {
-							let e = document.createEvent("Event"); 
-							e.initEvent("keydown", true, true);
-							e.which = e.keyCode = addChar.charCodeAt();
-							if (this.input.dispatchEvent(e)) {
-								text = this.insertChar(caret, text, addChar);
-							}
-						} else {
-							text = this.insertChar(caret, text, addChar);
-						}
-					} 
+					// JK: we don't need to actually modify the input text here because we do it in previewInputChange()
+					// if (this.input.maxLength <= 0 || text.length < this.input.maxLength) {
+					// 	if (this.options.useKbEvents) {
+					// 		let e = document.createEvent("Event"); 
+					// 		e.initEvent("keydown", true, true);
+					// 		e.which = e.keyCode = addChar.charCodeAt();
+					// 		if (this.input.dispatchEvent(e)) {
+					// 			text = this.insertChar(caret, text, addChar);
+					// 		}
+					// 	} else {
+					// 		text = this.insertChar(caret, text, addChar);
+					// 	}
+					// } 
 
 					if (this.currentKeySet == "shifted")
 						this.changeKeySet("default");
@@ -361,8 +422,9 @@
 				this.input.value = text;
 				this.setFocusToInput(caret);
 
-				if (this.change)
-					this.change(text, addChar);
+				if (this.change) {
+					this.change(text, addChar, key, true);
+				}
 
 				if (this.input.maxLength > 0 && text.length >= this.input.maxLength) {
 					// The value reached the maxLength
@@ -381,6 +443,8 @@
 						this.keyPreviewTextLength = 0;
 					}
 				}, TOUCH_DEBOUNCE_TIME_MS);
+				
+				this.caretBackup = null;
 			},
 			
 			setFocusToInput(caret) {
